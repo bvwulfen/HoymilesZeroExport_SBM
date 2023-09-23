@@ -16,6 +16,8 @@
 
 __author__ = "Tobias Kraft"
 __version__ = "1.56"
+__SBMversion__ = "0.1"
+
 
 import requests
 import time
