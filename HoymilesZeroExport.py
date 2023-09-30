@@ -42,32 +42,17 @@ logger = logging.getLogger()
 try:
     config = ConfigParser()
     config.read(str(Path.joinpath(Path(__file__).parent.resolve(), "HoymilesZeroExport_Config.ini")))
-    ENABLE_LOG_TO_FILE = config.getboolean('COMMON', 'ENABLE_LOG_TO_FILE')
-    LOG_BACKUP_COUNT = config.getint('COMMON', 'LOG_BACKUP_COUNT')
+    logger.info("read config file: " + str(Path.joinpath(Path(__file__).parent.resolve(), "HoymilesZeroExport_Config.ini")))
+    
 except Exception as e:
-    logger.info('Error on reading ENABLE_LOG_TO_FILE, set it to DISABLED')
-    ENABLE_LOG_TO_FILE = False
+    logger.info('Error on reading CONFIG, critical!')
     if hasattr(e, 'message'):
         logger.error(e.message)
     else:
         logger.error(e)
+    quit()
 
-if ENABLE_LOG_TO_FILE:
-    if not os.path.exists(Path.joinpath(Path(__file__).parent.resolve(), 'log')):
-        os.makedirs(Path.joinpath(Path(__file__).parent.resolve(), 'log'))
 
-    rotating_file_handler = TimedRotatingFileHandler(
-        filename=Path.joinpath(Path.joinpath(Path(__file__).parent.resolve(), 'log'),'log'),
-        when='midnight',
-        interval=2,
-        backupCount=LOG_BACKUP_COUNT)
-
-    formatter = logging.Formatter(
-        '%(asctime)s %(levelname)-8s %(message)s')
-    rotating_file_handler.setFormatter(formatter)
-    logger.addHandler(rotating_file_handler)
-
-logger.info('Log write to file: %s', ENABLE_LOG_TO_FILE)
 logger.info('Python Version: ' + sys.version)
 try:
     assert sys.version_info >= (3,6)
@@ -75,6 +60,8 @@ except:
     logger.info('Error: your Python version is too old, this script requires version 3.6 or newer. Please update your Python.')
     sys.exit()
 
+
+logger.info('def: CastToInt.')
 def CastToInt(pValueToCast):
     try:
         result = int(pValueToCast)
@@ -88,15 +75,7 @@ def CastToInt(pValueToCast):
         logger.error("Exception at CastToInt")
         raise
 
-def SetLimitOpenDTU(pInverterId, pLimit):
-    relLimit = CastToInt(pLimit / HOY_INVERTER_WATT[pInverterId] * 100)
-    url=f"http://{OPENDTU_IP}/api/limit/config"
-    data = f'''data={{"serial":"{SERIAL_NUMBER[pInverterId]}", "limit_type":1, "limit_value":{relLimit}}}'''
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    logger.info('OpenDTU: Inverter "%s": setting new limit from %s Watt to %s Watt',NAME[pInverterId],CastToInt(CURRENT_LIMIT[pInverterId]),CastToInt(pLimit))
-    requests.post(url, data=data, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), headers=headers)
-    CURRENT_LIMIT[pInverterId] = pLimit
-
+logger.info('def: SetLimitAhoy')
 def SetLimitAhoy(pInverterId, pLimit):
     url = f"http://{AHOY_IP}/api/ctrl"
     data = f'''{{"id": {pInverterId}, "cmd": "limit_nonpersistent_absolute", "val": {pLimit}}}'''
@@ -105,6 +84,7 @@ def SetLimitAhoy(pInverterId, pLimit):
     requests.post(url, data=data, headers=headers)
     CURRENT_LIMIT[pInverterId] = pLimit
 
+logger.info('def: WaitForAckAhoy')
 def WaitForAckAhoy(pInverterId, pTimeoutInS):
     url = f'http://{AHOY_IP}/api/inverter/id/{pInverterId}'
     timeout = pTimeoutInS
@@ -121,22 +101,7 @@ def WaitForAckAhoy(pInverterId, pTimeoutInS):
         logger.info('Ahoy: Inverter "%s": Limit timeout!', NAME[pInverterId])
     return ack
 
-def WaitForAckOpenDTU(pInverterId, pTimeoutInS):
-    url = f'http://{OPENDTU_IP}/api/limit/status'
-    timeout = pTimeoutInS
-    timeout_start = time.time()
-    while time.time() < timeout_start + timeout:
-        time.sleep(0.5)
-        ParsedData = requests.get(url, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), timeout=10).json()
-        ack = (ParsedData[SERIAL_NUMBER[pInverterId]]['limit_set_status'] == 'Ok')
-        if ack:
-            break
-    if ack:
-        logger.info('OpenDTU: Inverter "%s": Limit acknowledged', NAME[pInverterId])
-    else:
-        logger.info('OpenDTU: Inverter "%s": Limit timeout!', NAME[pInverterId])
-    return ack
-
+logger.info('def: SetLimit')
 def SetLimit(pLimit):
     try:
         if SET_LIMIT_RETRY != -1:
@@ -185,13 +150,7 @@ def SetLimit(pLimit):
         SetLimit.LastLimitAck = False
         raise
 
-def GetHoymilesAvailableOpenDTU(pInverterId):
-    url = f'http://{OPENDTU_IP}/api/livedata/status/inverters'
-    ParsedData = requests.get(url, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), timeout=10).json()
-    Reachable = bool(ParsedData["inverters"][pInverterId]["reachable"])
-    logger.info('OpenDTU: Inverter "%s" reachable: %s',NAME[pInverterId],Reachable)
-    return Reachable
-
+logger.info('def: GetHoymilesAvailableAhoy')
 def GetHoymilesAvailableAhoy(pInverterId):
     url = f'http://{AHOY_IP}/api/index'
     ParsedData = requests.get(url, timeout=10).json()
@@ -199,6 +158,7 @@ def GetHoymilesAvailableAhoy(pInverterId):
     logger.info('Ahoy: Inverter "%s" reachable: %s',NAME[pInverterId],Reachable)
     return Reachable
 
+logger.info('def: GetHoymilesAvailable')
 def GetHoymilesAvailable():
     try:
         GetHoymilesAvailable = False
@@ -207,10 +167,7 @@ def GetHoymilesAvailable():
                 WasAvail = AVAILABLE[i]
                 if USE_AHOY:
                     AVAILABLE[i] = GetHoymilesAvailableAhoy(i)
-                elif USE_OPENDTU:
-                    AVAILABLE[i] = GetHoymilesAvailableOpenDTU(i)
-                else:
-                    raise Exception("Error: DTU Type not defined")
+
                 if AVAILABLE[i]:
                     GetHoymilesAvailable = True
                     if not WasAvail:
@@ -226,7 +183,8 @@ def GetHoymilesAvailable():
     except:
         logger.error('Exception at GetHoymilesAvailable')
         raise
-    
+
+logger.info('def: ')
 def CheckAhoyVersion():
     MinVersion = '0.7.29'
     url = f'http://{AHOY_IP}/api/system'
@@ -237,14 +195,7 @@ def CheckAhoyVersion():
         logger.error('Error: Your AHOY Version is too old! Please update at least to Version %s - you can find the newest dev-releases here: https://github.com/lumapu/ahoy/actions',MinVersion)
         quit()
 
-def GetHoymilesInfoOpenDTU(pInverterId):
-    url = f'http://{OPENDTU_IP}/api/livedata/status/inverters'
-    ParsedData = requests.get(url, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), timeout=10).json()
-    SERIAL_NUMBER[pInverterId] = str(ParsedData['inverters'][pInverterId]['serial'])
-    TEMPERATURE[pInverterId] = str(round(float((ParsedData['inverters'][pInverterId]['INV']['0']['Temperature']['v'])),1)) + ' degC'
-    NAME[pInverterId] = str(ParsedData['inverters'][pInverterId]['name'])
-    logger.info('OpenDTU: Inverter "%s" / serial number "%s" / temperature %s',NAME[pInverterId],SERIAL_NUMBER[pInverterId],TEMPERATURE[pInverterId])
-
+logger.info('def: ')
 def GetHoymilesInfoAhoy(pInverterId):
     url = f'http://{AHOY_IP}/api/live'
     ParsedData = requests.get(url, timeout=10).json()
@@ -257,6 +208,7 @@ def GetHoymilesInfoAhoy(pInverterId):
     TEMPERATURE[pInverterId] = str(ParsedData["ch"][0][temp_index]) + ' degC'
     logger.info('Ahoy: Inverter "%s" / serial number "%s" / temperature %s',NAME[pInverterId],SERIAL_NUMBER[pInverterId],TEMPERATURE[pInverterId])
 
+logger.info('def: ')
 def GetHoymilesInfo():
     try:
         for i in range(INVERTER_COUNT):
@@ -279,6 +231,7 @@ def GetHoymilesInfo():
         logger.error("Exception at GetHoymilesInfo")
         raise
 
+logger.info('def: ')
 def GetHoymilesPanelMinVoltageAhoy(pInverterId):
     url = f'http://{AHOY_IP}/api/live'
     ParsedData = requests.get(url, timeout=10).json()
@@ -309,33 +262,7 @@ def GetHoymilesPanelMinVoltageAhoy(pInverterId):
     logger.info('Lowest panel voltage inverter "%s": %s Volt',NAME[pInverterId],max_value)
     return max_value
 
-def GetHoymilesPanelMinVoltageOpenDTU(pInverterId):
-    url = f'http://{OPENDTU_IP}/api/livedata/status/inverters'
-    ParsedData = requests.get(url, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), timeout=10).json()
-    PanelVDC = []
-    ExcludedPanels = GetNumberArray(HOY_BATTERY_IGNORE_PANELS[pInverterId])
-    for i in range(len(ParsedData['inverters'][pInverterId]['DC'])):
-        if i not in ExcludedPanels:
-            PanelVDC.append(float(ParsedData['inverters'][pInverterId]['DC'][str(i)]['Voltage']['v']))
-    minVdc = float('inf')
-    for i in range(len(PanelVDC)):
-        if (minVdc > PanelVDC[i]) and (PanelVDC[i] > 5):
-            minVdc = PanelVDC[i]
-    if minVdc == float('inf'):
-        minVdc = 0
-
-    # save last 5 min-values in list and return the "highest" value.
-    HOY_PANEL_VOLTAGE_LIST[pInverterId].append(minVdc)
-    if len(HOY_PANEL_VOLTAGE_LIST[pInverterId]) > 5:
-        HOY_PANEL_VOLTAGE_LIST[pInverterId].pop(0)
-    max_value = None
-    for num in HOY_PANEL_VOLTAGE_LIST[pInverterId]:
-        if (max_value is None or num > max_value):
-            max_value = num
-
-    logger.info('Lowest panel voltage inverter "%s": %s Volt',NAME[pInverterId],max_value)
-    return max_value
-
+logger.info('def: ')
 def GetHoymilesPanelMinVoltage(pInverterId):
     try:
         if not AVAILABLE[pInverterId]:
@@ -350,6 +277,7 @@ def GetHoymilesPanelMinVoltage(pInverterId):
         logger.error("Exception at GetHoymilesPanelMinVoltage, Inverter %s not reachable", pInverterId)
         raise
 
+logger.info('def: ')
 def SetHoymilesPowerStatusAhoy(pInverterId, pActive):
     url = f"http://{AHOY_IP}/api/ctrl"
     data = f'''{{"id": {pInverterId}, "cmd": "power", "val": {CastToInt(pActive == True)}}}'''
@@ -361,17 +289,7 @@ def SetHoymilesPowerStatusAhoy(pInverterId, pActive):
     requests.post(url, data=data, headers=headers)
     HOY_POWER_STATUS[pInverterId] = pActive
 
-def SetHoymilesPowerStatusOpenDTU(pInverterId, pActive):
-    url=f"http://{OPENDTU_IP}/api/power/config"
-    data = f'''data={{"serial":"{SERIAL_NUMBER[pInverterId]}", "power":{CastToInt(pActive == True)}}}'''
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    if pActive:
-        logger.info('OpenDTU: Inverter "%s": Turn on',NAME[pInverterId])
-    else:
-        logger.info('OpenDTU: Inverter "%s": Turn off',NAME[pInverterId])
-    a = requests.post(url, data=data, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), headers=headers)
-    HOY_POWER_STATUS[pInverterId] = pActive
-
+logger.info('def: ')
 def SetHoymilesPowerStatus(pInverterId, pActive):
     try:
         if not AVAILABLE[pInverterId]:
@@ -396,15 +314,14 @@ def SetHoymilesPowerStatus(pInverterId, pActive):
                 return
         if USE_AHOY:
             SetHoymilesPowerStatusAhoy(pInverterId, pActive)
-        elif USE_OPENDTU:
-            SetHoymilesPowerStatusOpenDTU(pInverterId, pActive)
         else:
             raise Exception("Error: DTU Type not defined")
         time.sleep(SET_POWER_STATUS_DELAY_IN_SECONDS)
     except:
         logger.error("Exception at SetHoymilesPowerStatus")
         raise
-    
+        
+logger.info('def: ')
 def GetNumberArray(pExcludedPanels):
     lclExcludedPanelsList = pExcludedPanels.split(',')
     result = []
@@ -415,6 +332,7 @@ def GetNumberArray(pExcludedPanels):
         result.append(number)
     return result
 
+logger.info('def: ')
 def GetCheckBattery():
     try:
         result = False
@@ -451,12 +369,7 @@ def GetCheckBattery():
         logger.error("Exception at CheckBattery")
         raise
 
-def GetHoymilesTemperatureOpenDTU(pInverterId):
-    url = f'http://{OPENDTU_IP}/api/livedata/status/inverters'
-    ParsedData = requests.get(url, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), timeout=10).json()
-    TEMPERATURE[pInverterId] = str(round(float((ParsedData['inverters'][pInverterId]['INV']['0']['Temperature']['v'])),1)) + ' degC'
-    logger.info('OpenDTU: Inverter "%s" temperature: %s',NAME[pInverterId],TEMPERATURE[pInverterId])
-
+logger.info('def: ')
 def GetHoymilesTemperatureAhoy(pInverterId):
     url = f'http://{AHOY_IP}/api/live'
     ParsedData = requests.get(url, timeout=10).json()
@@ -474,8 +387,6 @@ def GetHoymilesTemperature():
                     continue
                 if USE_AHOY:
                     GetHoymilesTemperatureAhoy(i)
-                elif USE_OPENDTU:
-                    GetHoymilesTemperatureOpenDTU(i)
                 else:
                     raise Exception("Error: DTU Type not defined")
             except:
@@ -484,12 +395,6 @@ def GetHoymilesTemperature():
         logger.error("Exception at GetHoymilesTemperature")
         raise
 
-def GetHoymilesActualPowerOpenDTU(pInverterId):
-    url = f'http://{OPENDTU_IP}/api/livedata/status/inverters'
-    ParsedData = requests.get(url, auth=HTTPBasicAuth(OPENDTU_USER, OPENDTU_PASS), timeout=10).json()
-    ActualPower = CastToInt(ParsedData['inverters'][pInverterId]['AC']['0']['Power']['v'])
-    logger.info('OpenDTU: Inverter "%s" power producing: %s %s',NAME[pInverterId],ActualPower," Watt")
-    return CastToInt(ActualPower)
 
 def GetHoymilesActualPowerAhoy(pInverterId):
     url = f'http://{AHOY_IP}/api/live'
@@ -501,42 +406,15 @@ def GetHoymilesActualPowerAhoy(pInverterId):
     logger.info('Ahoy: Inverter "%s" power producing: %s %s',NAME[pInverterId],ActualPower," Watt")
     return CastToInt(ActualPower)
 
+logger.info('def: ')
 def GetHoymilesActualPower():
     try:
         ActualPower = 0
-        if USE_SHELLY_EM_INTERMEDIATE:
-            return GetPowermeterWattsShellyEM_Intermediate()        
-        elif USE_SHELLY_3EM_INTERMEDIATE:
-            return GetPowermeterWattsShelly3EM_Intermediate()
-        elif USE_SHELLY_3EM_PRO_INTERMEDIATE:
-            return GetPowermeterWattsShelly3EMPro_Intermediate()
-        elif USE_SHELLY_1PM_INTERMEDIATE:
-            return GetPowermeterWattsShelly1PM_Intermediate()
-        elif USE_SHELLY_PLUS_1PM_INTERMEDIATE:
-            return GetPowermeterWattsShellyPlus1PM_Intermediate()
-        elif USE_TASMOTA_INTERMEDIATE:
-            return GetPowermeterWattsTasmota_Intermediate()
-        elif USE_SHRDZM_INTERMEDIATE:
-            return GetPowermeterWattsShrdzm_Intermediate()
-        elif USE_EMLOG_INTERMEDIATE:
-            return GetPowermeterWattsEmlog_Intermediate()
-        elif USE_IOBROKER_INTERMEDIATE:
-            return GetPowermeterWattsIobroker_Intermediate()
-        elif USE_HOMEASSISTANT_INTERMEDIATE:
-            return GetPowermeterWattsHomeAssistant_Intermediate()
-        elif USE_VZLOGGER_INTERMEDIATE:
-            return GetPowermeterWattsVZLogger_Intermediate()
-        elif USE_AHOY:
+        if USE_AHOY:
             for i in range(INVERTER_COUNT):
                 if (not AVAILABLE[i]) or (not HOY_POWER_STATUS[i]):
                     continue
                 ActualPower = ActualPower + GetHoymilesActualPowerAhoy(i)
-            return ActualPower
-        elif USE_OPENDTU:
-            for i in range(INVERTER_COUNT):
-                if (not AVAILABLE[i]) or (not HOY_POWER_STATUS[i]):
-                    continue
-                ActualPower = ActualPower + GetHoymilesActualPowerOpenDTU(i)
             return ActualPower
         else:
             raise Exception("Error: DTU Type not defined")
@@ -544,139 +422,7 @@ def GetHoymilesActualPower():
         logger.error("Exception at GetHoymilesActualPower")
         raise
 
-def GetPowermeterWattsTasmota_Intermediate():
-    url = f'http://{TASMOTA_IP_INTERMEDIATE}/cm?cmnd=status%2010'
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(ParsedData[TASMOTA_JSON_STATUS_INTERMEDIATE][TASMOTA_JSON_PAYLOAD_MQTT_PREFIX_INTERMEDIATE][TASMOTA_JSON_POWER_MQTT_LABEL_INTERMEDIATE])
-    logger.info("intermediate meter Tasmota: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShelly1PM_Intermediate():
-    url = f'http://{SHELLY_IP_INTERMEDIATE}/status'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=(SHELLY_USER_INTERMEDIATE,SHELLY_PASS_INTERMEDIATE), timeout=10).json()
-    Watts = CastToInt(ParsedData['meters'][0]['power'])
-    logger.info("intermediate meter Shelly 1PM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShellyPlus1PM_Intermediate():
-    url = f'http://{SHELLY_IP_INTERMEDIATE}/rpc/Switch.GetStatus?id=0'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=HTTPDigestAuth(SHELLY_USER_INTERMEDIATE,SHELLY_PASS_INTERMEDIATE), timeout=10).json()
-    Watts = CastToInt(ParsedData['apower'])
-    logger.info("intermediate meter Shelly Plus 1PM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShellyEM_Intermediate():
-    url = f'http://{SHELLY_IP_INTERMEDIATE}/status'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=(SHELLY_USER_INTERMEDIATE,SHELLY_PASS_INTERMEDIATE), timeout=10).json()
-    Watts = sum(CastToInt(emeter['power']) for emeter in ParsedData['emeters'])
-    logger.info("intermediate meter Shelly EM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShelly3EM_Intermediate():
-    url = f'http://{SHELLY_IP_INTERMEDIATE}/status'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=(SHELLY_USER_INTERMEDIATE,SHELLY_PASS_INTERMEDIATE), timeout=10).json()
-    Watts = CastToInt(ParsedData['total_power'])
-    logger.info("intermediate meter Shelly 3EM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShelly3EMPro_Intermediate():
-    url = f'http://{SHELLY_IP_INTERMEDIATE}/rpc/EM.GetStatus?id=0'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=HTTPDigestAuth(SHELLY_USER_INTERMEDIATE,SHELLY_PASS_INTERMEDIATE), timeout=10).json()
-    Watts = CastToInt(ParsedData['total_act_power'])
-    logger.info("intermediate meter Shelly 3EM Pro: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShrdzm_Intermediate():
-    url = f'http://{SHRDZM_IP_INTERMEDIATE}/getLastData?user={SHRDZM_USER_INTERMEDIATE}&password={SHRDZM_PASS_INTERMEDIATE}'
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(CastToInt(ParsedData['1.7.0']) - CastToInt(ParsedData['2.7.0']))
-    logger.info("intermediate meter SHRDZM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsEmlog_Intermediate():
-    url = f'http://{EMLOG_IP_INTERMEDIATE}/pages/getinformation.php?heute&meterindex={EMLOG_METERINDEX_INTERMEDIATE}'
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(ParsedData['Leistung170'])
-    logger.info("intermediate meter EMLOG: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsIobroker_Intermediate():
-    url = f'http://{IOBROKER_IP_INTERMEDIATE}:{IOBROKER_PORT_INTERMEDIATE}/getBulk/{IOBROKER_CURRENT_POWER_ALIAS_INTERMEDIATE}'
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(ParsedData[0]['val'])
-    logger.info("intermediate meter IOBROKER: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsHomeAssistant_Intermediate():
-    url = f"http://{HA_IP_INTERMEDIATE}:{HA_PORT_INTERMEDIATE}/api/states/{HA_CURRENT_POWER_ENTITY_INTERMEDIATE}"
-    headers = {"Authorization": "Bearer " + HA_ACCESSTOKEN_INTERMEDIATE, "content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, timeout=10).json()
-    Watts = CastToInt(ParsedData['state'])
-    logger.info("intermediate meter HomeAssistant: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsVZLogger_Intermediate():
-    url = f"http://{VZL_IP_INTERMEDIATE}:{VZL_PORT_INTERMEDIATE}/{VZL_UUID_INTERMEDIATE}"
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(ParsedData['data'][0]['tuples'][0][1])
-    logger.info("intermediate meter VZLogger: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsTasmota():
-    url = f'http://{TASMOTA_IP}/cm?cmnd=status%2010'
-    ParsedData = requests.get(url, timeout=10).json()
-    if not TASMOTA_JSON_POWER_CALCULATE:
-        Watts = CastToInt(ParsedData[TASMOTA_JSON_STATUS][TASMOTA_JSON_PAYLOAD_MQTT_PREFIX][TASMOTA_JSON_POWER_MQTT_LABEL])
-    else:
-        input = ParsedData[TASMOTA_JSON_STATUS][TASMOTA_JSON_PAYLOAD_MQTT_PREFIX][TASMOTA_JSON_POWER_INPUT_MQTT_LABEL]
-        ouput = ParsedData[TASMOTA_JSON_STATUS][TASMOTA_JSON_PAYLOAD_MQTT_PREFIX][TASMOTA_JSON_POWER_OUTPUT_MQTT_LABEL]
-        Watts = CastToInt(input - ouput)
-    logger.info("powermeter Tasmota: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShellyEM():
-    url = f'http://{SHELLY_IP}/status'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=(SHELLY_USER,SHELLY_PASS), timeout=10).json()
-    Watts = sum(CastToInt(emeter['power']) for emeter in ParsedData['emeters'])
-    logger.info("powermeter Shelly EM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShelly3EM():
-    url = f'http://{SHELLY_IP}/status'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=(SHELLY_USER,SHELLY_PASS), timeout=10).json()
-    Watts = CastToInt(ParsedData['total_power'])
-    logger.info("powermeter Shelly 3EM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShelly3EMPro():
-    url = f'http://{SHELLY_IP}/rpc/EM.GetStatus?id=0'
-    headers = {"content-type": "application/json"}
-    ParsedData = requests.get(url, headers=headers, auth=HTTPDigestAuth(SHELLY_USER,SHELLY_PASS), timeout=10).json()
-    Watts = CastToInt(ParsedData['total_act_power'])
-    logger.info("powermeter Shelly 3EM Pro: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsShrdzm():
-    url = f'http://{SHRDZM_IP}/getLastData?user={SHRDZM_USER}&password={SHRDZM_PASS}'
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(CastToInt(ParsedData['1.7.0']) - CastToInt(ParsedData['2.7.0']))
-    logger.info("powermeter SHRDZM: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
-def GetPowermeterWattsEmlog():
-    url = f'http://{EMLOG_IP}/pages/getinformation.php?heute&meterindex={EMLOG_METERINDEX}'
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(CastToInt(ParsedData['Leistung170']) - CastToInt(ParsedData['Leistung270']))
-    logger.info("powermeter EMLOG: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
+logger.info('def: ')
 def GetPowermeterWattsIobroker():
     if not IOBROKER_POWER_CALCULATE:
         url = f'http://{IOBROKER_IP}:{IOBROKER_PORT}/getBulk/{IOBROKER_CURRENT_POWER_ALIAS}'
@@ -697,52 +443,17 @@ def GetPowermeterWattsIobroker():
     logger.info("powermeter IOBROKER: %s %s",Watts," Watt")
     return CastToInt(Watts)
 
-def GetPowermeterWattsHomeAssistant():
-    if not HA_POWER_CALCULATE:
-        url = f"http://{HA_IP}:{HA_PORT}/api/states/{HA_CURRENT_POWER_ENTITY}"
-        headers = {"Authorization": "Bearer " + HA_ACCESSTOKEN, "content-type": "application/json"}
-        ParsedData = requests.get(url, headers=headers, timeout=10).json()
-        Watts = CastToInt(ParsedData['state'])
-    else:
-        url = f"http://{HA_IP}:{HA_PORT}/api/states/{HA_POWER_INPUT_ALIAS}"
-        headers = {"Authorization": "Bearer " + HA_ACCESSTOKEN, "content-type": "application/json"}
-        ParsedData = requests.get(url, headers=headers, timeout=10).json()
-        input = CastToInt(ParsedData['state'])
-        url = f"http://{HA_IP}:{HA_PORT}/api/states/{HA_POWER_OUTPUT_ALIAS}"
-        headers = {"Authorization": "Bearer " + HA_ACCESSTOKEN, "content-type": "application/json"}
-        ParsedData = requests.get(url, headers=headers, timeout=10).json()
-        output = CastToInt(ParsedData['state'])
-        Watts = CastToInt(input - output)
-    logger.info("powermeter HomeAssistant: %s %s",Watts," Watt")
+logger.info('def: ')
+def GetPowermeterWattsTibber():
+        Watts = CastToInt(200)
+    logger.info("powermeter tibber: %s %s",Watts," Watt")
     return CastToInt(Watts)
 
-def GetPowermeterWattsVZLogger():
-    url = f"http://{VZL_IP}:{VZL_PORT}/{VZL_UUID}"
-    ParsedData = requests.get(url, timeout=10).json()
-    Watts = CastToInt(ParsedData['data'][0]['tuples'][0][1])
-    logger.info("powermeter VZLogger: %s %s",Watts," Watt")
-    return CastToInt(Watts)
-
+logger.info('def: ')
 def GetPowermeterWatts():
     try:
-        if USE_SHELLY_EM:
-            return GetPowermeterWattsShellyEM()
-        elif USE_SHELLY_3EM:
-            return GetPowermeterWattsShelly3EM()
-        elif USE_SHELLY_3EM_PRO:
-            return GetPowermeterWattsShelly3EMPro()
-        elif USE_TASMOTA:
-            return GetPowermeterWattsTasmota()
-        elif USE_SHRDZM:
-            return GetPowermeterWattsShrdzm()
-        elif USE_EMLOG:
-            return GetPowermeterWattsEmlog()
-        elif USE_IOBROKER:
+        if USE_IOBROKER:
             return GetPowermeterWattsIobroker()
-        elif USE_HOMEASSISTANT:
-            return GetPowermeterWattsHomeAssistant()
-        elif USE_VZLOGGER:
-            return GetPowermeterWattsVZLogger()
         else:
             raise Exception("Error: no powermeter defined!")
     except:
@@ -810,88 +521,22 @@ def GetMinWattFromAllInverters():
 logger.info("Author: %s / Script Version: %s",__author__, __version__)
 
 # read config:
-logger.info("read config file: " + str(Path.joinpath(Path(__file__).parent.resolve(), "HoymilesZeroExport_Config.ini")))
+
 VERSION = config.get('VERSION', 'VERSION')
 logger.info("Config file V %s", VERSION)
 USE_AHOY = config.getboolean('SELECT_DTU', 'USE_AHOY')
-USE_OPENDTU = config.getboolean('SELECT_DTU', 'USE_OPENDTU')
-USE_TASMOTA = config.getboolean('SELECT_POWERMETER', 'USE_TASMOTA')
-USE_SHELLY_EM = config.getboolean('SELECT_POWERMETER', 'USE_SHELLY_EM')
-USE_SHELLY_3EM = config.getboolean('SELECT_POWERMETER', 'USE_SHELLY_3EM')
-USE_SHELLY_3EM_PRO = config.getboolean('SELECT_POWERMETER', 'USE_SHELLY_3EM_PRO')
-USE_SHRDZM = config.getboolean('SELECT_POWERMETER', 'USE_SHRDZM')
-USE_EMLOG = config.getboolean('SELECT_POWERMETER', 'USE_EMLOG')
+
 USE_IOBROKER = config.getboolean('SELECT_POWERMETER', 'USE_IOBROKER')
-USE_HOMEASSISTANT = config.getboolean('SELECT_POWERMETER', 'USE_HOMEASSISTANT')
-USE_VZLOGGER = config.getboolean('SELECT_POWERMETER', 'USE_VZLOGGER')
+
 AHOY_IP = config.get('AHOY_DTU', 'AHOY_IP')
-OPENDTU_IP = config.get('OPEN_DTU', 'OPENDTU_IP')
-OPENDTU_USER = config.get('OPEN_DTU', 'OPENDTU_USER')
-OPENDTU_PASS = config.get('OPEN_DTU', 'OPENDTU_PASS')
-TASMOTA_IP = config.get('TASMOTA', 'TASMOTA_IP')
-TASMOTA_JSON_STATUS = config.get('TASMOTA', 'TASMOTA_JSON_STATUS')
-TASMOTA_JSON_PAYLOAD_MQTT_PREFIX = config.get('TASMOTA', 'TASMOTA_JSON_PAYLOAD_MQTT_PREFIX')
-TASMOTA_JSON_POWER_MQTT_LABEL = config.get('TASMOTA', 'TASMOTA_JSON_POWER_MQTT_LABEL')
-TASMOTA_JSON_POWER_CALCULATE = config.getboolean('TASMOTA', 'TASMOTA_JSON_POWER_CALCULATE')
-TASMOTA_JSON_POWER_INPUT_MQTT_LABEL = config.get('TASMOTA', 'TASMOTA_JSON_POWER_INPUT_MQTT_LABEL')
-TASMOTA_JSON_POWER_OUTPUT_MQTT_LABEL = config.get('TASMOTA', 'TASMOTA_JSON_POWER_OUTPUT_MQTT_LABEL')
-SHELLY_IP = config.get('SHELLY', 'SHELLY_IP')
-SHELLY_USER = config.get('SHELLY', 'SHELLY_USER')
-SHELLY_PASS = config.get('SHELLY', 'SHELLY_PASS')
-SHRDZM_IP = config.get('SHRDZM', 'SHRDZM_IP')
-SHRDZM_USER = config.get('SHRDZM', 'SHRDZM_USER')
-SHRDZM_PASS = config.get('SHRDZM', 'SHRDZM_PASS')
-EMLOG_IP = config.get('EMLOG', 'EMLOG_IP')
-EMLOG_METERINDEX = config.get('EMLOG', 'EMLOG_METERINDEX')
+
 IOBROKER_IP = config.get('IOBROKER', 'IOBROKER_IP')
 IOBROKER_PORT = config.get('IOBROKER', 'IOBROKER_PORT')
 IOBROKER_CURRENT_POWER_ALIAS = config.get('IOBROKER', 'IOBROKER_CURRENT_POWER_ALIAS')
 IOBROKER_POWER_CALCULATE = config.getboolean('IOBROKER', 'IOBROKER_POWER_CALCULATE')
 IOBROKER_POWER_INPUT_ALIAS = config.get('IOBROKER', 'IOBROKER_POWER_INPUT_ALIAS')
 IOBROKER_POWER_OUTPUT_ALIAS = config.get('IOBROKER', 'IOBROKER_POWER_OUTPUT_ALIAS')
-HA_IP = config.get('HOMEASSISTANT', 'HA_IP')
-HA_PORT = config.get('HOMEASSISTANT', 'HA_PORT')
-HA_ACCESSTOKEN = config.get('HOMEASSISTANT', 'HA_ACCESSTOKEN')
-HA_CURRENT_POWER_ENTITY = config.get('HOMEASSISTANT', 'HA_CURRENT_POWER_ENTITY')
-HA_POWER_CALCULATE = config.getboolean('HOMEASSISTANT', 'HA_POWER_CALCULATE')
-HA_POWER_INPUT_ALIAS = config.get('HOMEASSISTANT', 'HA_POWER_INPUT_ALIAS')
-HA_POWER_OUTPUT_ALIAS = config.get('HOMEASSISTANT', 'HA_POWER_OUTPUT_ALIAS')
-VZL_IP = config.get('VZLOGGER', 'VZL_IP')
-VZL_PORT = config.get('VZLOGGER', 'VZL_PORT')
-VZL_UUID = config.get('VZLOGGER', 'VZL_UUID')
-USE_TASMOTA_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_TASMOTA_INTERMEDIATE')
-USE_SHELLY_EM_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_SHELLY_EM_INTERMEDIATE')
-USE_SHELLY_3EM_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_SHELLY_3EM_INTERMEDIATE')
-USE_SHELLY_3EM_PRO_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_SHELLY_3EM_PRO_INTERMEDIATE')
-USE_SHELLY_1PM_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_SHELLY_1PM_INTERMEDIATE')
-USE_SHELLY_PLUS_1PM_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_SHELLY_PLUS_1PM_INTERMEDIATE')
-USE_SHRDZM_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_SHRDZM_INTERMEDIATE')
-USE_EMLOG_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_EMLOG_INTERMEDIATE')
-USE_IOBROKER_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_IOBROKER_INTERMEDIATE')
-USE_HOMEASSISTANT_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_HOMEASSISTANT_INTERMEDIATE')
-USE_VZLOGGER_INTERMEDIATE = config.getboolean('SELECT_INTERMEDIATE_METER', 'USE_VZLOGGER_INTERMEDIATE')
-TASMOTA_IP_INTERMEDIATE = config.get('INTERMEDIATE_TASMOTA', 'TASMOTA_IP_INTERMEDIATE')
-TASMOTA_JSON_STATUS_INTERMEDIATE = config.get('INTERMEDIATE_TASMOTA', 'TASMOTA_JSON_STATUS_INTERMEDIATE')
-TASMOTA_JSON_PAYLOAD_MQTT_PREFIX_INTERMEDIATE = config.get('INTERMEDIATE_TASMOTA', 'TASMOTA_JSON_PAYLOAD_MQTT_PREFIX_INTERMEDIATE')
-TASMOTA_JSON_POWER_MQTT_LABEL_INTERMEDIATE = config.get('INTERMEDIATE_TASMOTA', 'TASMOTA_JSON_POWER_MQTT_LABEL_INTERMEDIATE')
-SHELLY_IP_INTERMEDIATE = config.get('INTERMEDIATE_SHELLY', 'SHELLY_IP_INTERMEDIATE')
-SHELLY_USER_INTERMEDIATE = config.get('INTERMEDIATE_SHELLY', 'SHELLY_USER_INTERMEDIATE')
-SHELLY_PASS_INTERMEDIATE = config.get('INTERMEDIATE_SHELLY', 'SHELLY_PASS_INTERMEDIATE')
-SHRDZM_IP_INTERMEDIATE = config.get('INTERMEDIATE_SHRDZM', 'SHRDZM_IP_INTERMEDIATE')
-SHRDZM_USER_INTERMEDIATE = config.get('INTERMEDIATE_SHRDZM', 'SHRDZM_USER_INTERMEDIATE')
-SHRDZM_PASS_INTERMEDIATE = config.get('INTERMEDIATE_SHRDZM', 'SHRDZM_PASS_INTERMEDIATE')
-EMLOG_IP_INTERMEDIATE = config.get('INTERMEDIATE_EMLOG', 'EMLOG_IP_INTERMEDIATE')
-EMLOG_METERINDEX_INTERMEDIATE = config.get('INTERMEDIATE_EMLOG', 'EMLOG_METERINDEX_INTERMEDIATE')
-IOBROKER_IP_INTERMEDIATE = config.get('INTERMEDIATE_IOBROKER', 'IOBROKER_IP_INTERMEDIATE')
-IOBROKER_PORT_INTERMEDIATE = config.get('INTERMEDIATE_IOBROKER', 'IOBROKER_PORT_INTERMEDIATE')
-IOBROKER_CURRENT_POWER_ALIAS_INTERMEDIATE = config.get('INTERMEDIATE_IOBROKER', 'IOBROKER_CURRENT_POWER_ALIAS_INTERMEDIATE')
-HA_IP_INTERMEDIATE = config.get('INTERMEDIATE_HOMEASSISTANT', 'HA_IP_INTERMEDIATE')
-HA_PORT_INTERMEDIATE = config.get('INTERMEDIATE_HOMEASSISTANT', 'HA_PORT_INTERMEDIATE')
-HA_ACCESSTOKEN_INTERMEDIATE = config.get('INTERMEDIATE_HOMEASSISTANT', 'HA_ACCESSTOKEN_INTERMEDIATE')
-HA_CURRENT_POWER_ENTITY_INTERMEDIATE = config.get('INTERMEDIATE_HOMEASSISTANT', 'HA_CURRENT_POWER_ENTITY_INTERMEDIATE')
-VZL_IP_INTERMEDIATE = config.get('INTERMEDIATE_VZLOGGER', 'VZL_IP_INTERMEDIATE')
-VZL_PORT_INTERMEDIATE = config.get('INTERMEDIATE_VZLOGGER', 'VZL_PORT_INTERMEDIATE')
-VZL_UUID_INTERMEDIATE = config.get('INTERMEDIATE_VZLOGGER', 'VZL_UUID_INTERMEDIATE')
+
 INVERTER_COUNT = config.getint('COMMON', 'INVERTER_COUNT')
 LOOP_INTERVAL_IN_SECONDS = config.getint('COMMON', 'LOOP_INTERVAL_IN_SECONDS')
 SET_LIMIT_DELAY_IN_SECONDS = config.getint('COMMON', 'SET_LIMIT_DELAY_IN_SECONDS')
@@ -907,9 +552,11 @@ LOG_TEMPERATURE = config.getboolean('COMMON', 'LOG_TEMPERATURE')
 POWERMETER_TARGET_POINT = config.getint('CONTROL', 'POWERMETER_TARGET_POINT')
 POWERMETER_TOLERANCE = config.getint('CONTROL', 'POWERMETER_TOLERANCE')
 POWERMETER_MAX_POINT = config.getint('CONTROL', 'POWERMETER_MAX_POINT')
+
 if POWERMETER_MAX_POINT < (POWERMETER_TARGET_POINT + POWERMETER_TOLERANCE):
     POWERMETER_MAX_POINT = POWERMETER_TARGET_POINT + POWERMETER_TOLERANCE + 50
     logger.info('Warning: POWERMETER_MAX_POINT < POWERMETER_TARGET_POINT + POWERMETER_TOLERANCE. Setting POWERMETER_MAX_POINT to ' + str(POWERMETER_MAX_POINT))
+    
 SERIAL_NUMBER = []
 NAME = []
 TEMPERATURE = []
@@ -973,14 +620,22 @@ except Exception as e:
     else:
         logger.error(e)
     time.sleep(LOOP_INTERVAL_IN_SECONDS)
-logger.info("---Start Zero Export---")
+logger.info("---Init Done---")
 
+
+quit()
+
+# ----- Runtime -----
+logger.info("---Start Zero Export---")
 while True:
     try:
+        # ----- Comments for SBM -----
+        # ----- save last used "setpoint" -----
         PreviousLimitSetpoint = newLimitSetpoint
         if GetHoymilesAvailable() and GetCheckBattery():
             if LOG_TEMPERATURE:
                 GetHoymilesTemperature()
+        # ----- Main Loop for Powermeasurements -----
             for x in range(CastToInt(LOOP_INTERVAL_IN_SECONDS / POLL_INTERVAL_IN_SECONDS)):
                 powermeterWatts = GetPowermeterWatts()
                 if powermeterWatts > POWERMETER_MAX_POINT:
@@ -999,7 +654,39 @@ while True:
                     break
                 else:
                     time.sleep(POLL_INTERVAL_IN_SECONDS)
-
+        #TODO Average over LoopDuration
+                    
+        # ----- Done Powermeasurements x-times --> (POWERMETER_MAX_POINT can interrupt)-----
+        # ----- last and valid value in powermeterWatts -----
+        
+                    
+# resort for new order:
+        # GetInfos and general Calculations
+        # - getDeltaforZeroExport
+        # - getDeltaforTargetExport (POWERMETER_TARGET_POINT)
+        # - setInverterSumTarget for PowermeterTargetPoint
+        
+        # Limits for inverters 
+            # - see UpperLimits from inverters
+            
+            #Decision based: Direct and BAT-buffered
+                    #Direkt: as is. toggle to target 
+                        # -cut by: inv-limits
+                        # -Filter for smoothing and anti-bouncing. (if wanted)
+                        
+                    #BAT-buffered
+                        # -cut by: inv-limits
+                        # -cut by: BAT-Voltage-Limits for regulation
+                        # -cut by: BAT-Cut-off-Voltage (hysterese, lowpass-filtered-start)
+                    
+            
+        # - 
+        ##
+        
+        # - PreviousLimitSetpoint DONE before
+        # - newZeroExportTarget   (PreviousLimitSetpoint-setDelta
+        
+        
             if MAX_DIFFERENCE_BETWEEN_LIMIT_AND_OUTPUTPOWER != 100:
                 CutLimit = CutLimitToProduction(newLimitSetpoint)
                 if CutLimit != newLimitSetpoint:
@@ -1053,3 +740,4 @@ while True:
         else:
             logger.error(e)
         time.sleep(LOOP_INTERVAL_IN_SECONDS)
+        
